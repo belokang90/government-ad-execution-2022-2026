@@ -126,6 +126,21 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("GROUP BY 매체구분", self.cur.execute.call_args.args[0])
         self.conn.close.assert_called_once()
 
+    def test_summary_diagnostic_logs_connection_and_aggregation_separately(self):
+        self.cur.fetchall.return_value = [
+            {"매체구분": "인터넷", "ad_count": 2, "total_spend": Decimal("110.25")}
+        ]
+        with patch("routers.ads.perf_counter", side_effect=[0, 0, 0.125, 0.125, 9.125, 9.5]), \
+                patch("routers.ads.logger.info") as log:
+            response = self.client.get("/api/init-data", params={"include_filters": "false"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["total_count"], 2)
+        self.assertEqual(response.json()["total_sum"], 110.25)
+        self.assertEqual(self.cur.execute.call_count, 1)
+        log.assert_any_call("[로딩 진단] 상단 요약 DB 연결: %.3f초", 0.125)
+        log.assert_any_call("[로딩 진단] 상단 요약 전체 집계: %.3f초", 9.0)
+        log.assert_any_call("[로딩 진단] %s 서버 처리: %.3f초", "상단 요약", 9.5)
+
     def test_filter_options_keep_original_values_and_order(self):
         self.cur.fetchall.side_effect = [
             [{"기관분류": "공기업"}, {"기관분류": "지자체"}],

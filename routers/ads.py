@@ -1,10 +1,31 @@
 """정부광고 초기 정보·연도별 요약·조건 검색 API."""
 
+import logging
+from functools import wraps
+from time import perf_counter
+
 from fastapi import APIRouter, HTTPException
 
 from database import get_db
 
 router = APIRouter(prefix="/api", tags=["정부광고"])
+logger = logging.getLogger("uvicorn.error")
+
+
+def log_request_duration(label):
+    """사용자가 새로고침하면 서버 처리 시간만 터미널에 기록한다."""
+    def decorate(handler):
+        @wraps(handler)
+        def measured(*args, **kwargs):
+            started = perf_counter()
+            try:
+                return handler(*args, **kwargs)
+            finally:
+                # DB 비밀번호·검색어·광고 데이터는 로그에 넣지 않는다.
+                logger.info("[로딩 진단] %s 서버 처리: %.3f초", label, perf_counter() - started)
+        return measured
+    return decorate
+
 
 def read_filter_options(cur):
     # 기관분류 목록
@@ -22,11 +43,15 @@ def read_filter_options(cur):
 
 
 @router.get("/init-data")
+@log_request_duration("상단 요약")
 def init_data(include_filters: bool = True):
+    connection_started = perf_counter()
     conn = get_db()
+    logger.info("[로딩 진단] 상단 요약 DB 연결: %.3f초", perf_counter() - connection_started)
     try:
         with conn.cursor() as cur:
-            # 전체 요약 정보
+            # 전체 요약 정보. 조회와 결과 수신에 걸린 실제 시간을 잰다.
+            aggregation_started = perf_counter()
             cur.execute("""
                 SELECT
                     매체구분,
@@ -37,6 +62,7 @@ def init_data(include_filters: bool = True):
                 ORDER BY total_spend DESC
             """)
             summary_rows = cur.fetchall()
+            logger.info("[로딩 진단] 상단 요약 전체 집계: %.3f초", perf_counter() - aggregation_started)
 
             # 요약만 필요한 첫 요청은 선택 목록 3개 조회를 기다리지 않는다.
             options = read_filter_options(cur) if include_filters else {
@@ -61,6 +87,7 @@ def init_data(include_filters: bool = True):
         conn.close()
 
 @router.get("/filter-options")
+@log_request_duration("선택 목록")
 def filter_options():
     """선택 목록은 요약과 별도로 조회한다. 기존 정렬·항목을 유지한다."""
     conn = get_db()
@@ -75,6 +102,7 @@ def filter_options():
         conn.close()
 
 @router.get("/summary")
+@log_request_duration("연도별 요약")
 def get_summary(year: str = ""):
     conn = get_db()
     try:
@@ -107,6 +135,7 @@ def get_summary(year: str = ""):
         conn.close()
 
 @router.get("/search-ads")
+@log_request_duration("세부 데이터")
 def search_ads(
     keyword: str = "",
     org_type: str = "",
