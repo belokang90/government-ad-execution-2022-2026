@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>정부광고 집행내역 (22~26.09)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body class="p-4">
+    <div class="container-fluid">
+        <!-- 상단 헤더 -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>📊 정부광고 집행내역 (22~26.09)</h2>
+            <div>
+                <span class="badge bg-secondary p-2" id="dbTotalBadge">DB 전체 연동 건수: 로딩 중...</span>
+                <span class="badge bg-primary p-2 ms-2" id="loadedCountBadge">현재 로드된 결과: 0건</span>
+            </div>
+        </div>
+
+        <!-- AI 자동 분석 리포트 -->
+        <div class="card ai-banner p-3 mb-4 shadow-sm">
+            <h5 class="text-info fw-bold">🤖 자동 분석 리포트</h5>
+            <p class="mb-0" id="aiReportText">데이터를 분석하고 있습니다...</p>
+        </div>
+
+        <!-- 중앙 시각화 및 요약 영역 -->
+        <div class="row mb-4">
+            <div class="col-lg-5 mb-3 mb-lg-0">
+                <div class="card p-3 h-100">
+                    <h5 class="card-title text-center mb-3">📈 매체구분별 총 집행 금액 비중</h5>
+                    <div style="position: relative; height: 300px;">
+                        <canvas id="mediaChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-7">
+                <div class="card p-3 h-100">
+                    <h5 class="card-title mb-3">📌 매체구분별 광고 집행 요약표</h5>
+                    <div class="table-responsive" style="max-height: 310px; overflow-y: auto;">
+                        <table class="table table-sm table-dark table-hover align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>매체구분</th>
+                                    <th>집행 건수</th>
+                                    <th>총 집행 금액 (VAT 포함)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="summaryTableBody">
+                                <tr><td colspan="3" class="text-center">로딩 중...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 필터 및 검색 컨트롤 -->
+        <div class="card p-3 mb-4">
+            <div class="row g-2 align-items-center">
+                <div class="col-md-2">
+                    <select id="yearFilter" class="form-select form-select-sm" onchange="onYearFilterChange()">
+                        <option value="">모든 연도</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select id="orgTypeFilter" class="form-select form-select-sm" onchange="fetchData(true)">
+                        <option value="">모든 기관분류</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select id="mediaTypeFilter" class="form-select form-select-sm" onchange="fetchData(true)">
+                        <option value="">모든 매체구분</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <input type="text" id="keywordInput" class="form-control form-control-sm" placeholder="기관명, 매체명, 광고명 검색..." onkeyup="if(event.key==='Enter') fetchData(true)">
+                </div>
+                <div class="col-md-2 text-end">
+                    <button class="btn btn-primary btn-sm w-100" onclick="fetchData(true)">검색</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 하단 상세 데이터 테이블 -->
+        <div class="card p-3">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">📋 상세 집행 내역</h5>
+                <small class="text-muted">컬럼명을 클릭하면 정렬됩니다. 스크롤을 내리면 추가 데이터를 불러옵니다.</small>
+            </div>
+
+            <!-- 검색어/필터 맞춤형 요약 카드 배지 -->
+            <div id="searchSummaryCard" class="card search-summary-card p-3 mb-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="badge bg-info text-dark me-2">🔍 맞춤 팩트체크 요약</span>
+                        <span id="searchSummaryText">검색 결과가 없습니다.</span>
+                    </div>
+                    <div>
+                        <strong class="text-warning" id="searchSummarySum">총 집행액: 0 원</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-responsive" id="tableContainer" style="max-height: 500px; overflow-y: auto;">
+                <table class="table table-sm table-dark table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th class="sortable" onclick="sortTable('집행연도')">연도 <span id="sort_집행연도"></span></th>
+                            <th class="sortable" onclick="sortTable('기관분류')">기관분류 <span id="sort_기관분류"></span></th>
+                            <th class="sortable" onclick="sortTable('기관명')">기관명 <span id="sort_기관명"></span></th>
+                            <th class="sortable" onclick="sortTable('매체구분')">매체구분 <span id="sort_매체구분"></span></th>
+                            <th class="sortable" onclick="sortTable('매체명')">매체명 <span id="sort_매체명"></span></th>
+                            <th class="sortable" onclick="sortTable('광고명')">광고명 <span id="sort_광고명"></span></th>
+                            <th class="sortable" onclick="sortTable('광고시작일')">광고시작일 <span id="sort_광고시작일"></span></th>
+                            <th class="sortable" onclick="sortTable('광고종료일')">광고종료일 <span id="sort_광고종료일"></span></th>
+                            <th class="sortable text-end" onclick="sortTable('광고료')">광고료 <span id="sort_광고료"></span></th>
+                            <th class="sortable text-end" onclick="sortTable('수수료')">수수료 <span id="sort_수수료"></span></th>
+                            <th class="sortable text-end" onclick="sortTable('총계(VAT포함)')">총계(VAT포함) <span id="sort_총계(VAT포함)"></span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="dataTableBody">
+                        <tr><td colspan="11" class="text-center">데이터를 불러오는 중입니다...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

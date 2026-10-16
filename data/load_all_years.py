@@ -1,19 +1,16 @@
-import os
+"""연도별 CSV를 MySQL에 추가 적재한다. 재실행하면 중복될 수 있다."""
+
+import sys
 from pathlib import Path
+
 import pandas as pd
-import pymysql
 
+# python data/load_all_years.py 로 실행해도 루트의 공통 설정을 읽는다.
 BASE = Path(__file__).resolve().parent
+sys.path.insert(0, str(BASE.parent))
+from database import get_db
 
-conn = pymysql.connect(
-    host="127.0.0.1",
-    port=3306,
-    user="root",
-    password="1234",
-    database="government_ad_db",
-    charset="utf8mb4",
-    cursorclass=pymysql.cursors.DictCursor,
-)
+conn = get_db()
 
 target_files = {
     "2026년도_정부광고집행내역_260930 기준.csv": "2026",
