@@ -6,8 +6,23 @@ from database import get_db
 
 router = APIRouter(prefix="/api", tags=["정부광고"])
 
+def read_filter_options(cur):
+    # 기관분류 목록
+    cur.execute("SELECT DISTINCT 기관분류 FROM ad_execution WHERE 기관분류 IS NOT NULL AND 기관분류 != '' ORDER BY 기관분류")
+    org_types = [row['기관분류'] for row in cur.fetchall()]
+
+    # 매체구분 목록
+    cur.execute("SELECT DISTINCT 매체구분 FROM ad_execution WHERE 매체구분 IS NOT NULL AND 매체구분 != '' ORDER BY 매체구분")
+    media_types = [row['매체구분'] for row in cur.fetchall()]
+
+    # 연도 목록
+    cur.execute("SELECT DISTINCT 집행연도 AS yr FROM ad_execution WHERE 집행연도 IS NOT NULL AND 집행연도 != '' ORDER BY yr DESC")
+    years = [row['yr'] for row in cur.fetchall()]
+    return {"org_types": org_types, "media_types": media_types, "years": years}
+
+
 @router.get("/init-data")
-def init_data():
+def init_data(include_filters: bool = True):
     conn = get_db()
     try:
         with conn.cursor() as cur:
@@ -23,17 +38,10 @@ def init_data():
             """)
             summary_rows = cur.fetchall()
 
-            # 기관분류 목록
-            cur.execute("SELECT DISTINCT 기관분류 FROM ad_execution WHERE 기관분류 IS NOT NULL AND 기관분류 != '' ORDER BY 기관분류")
-            org_types = [row['기관분류'] for row in cur.fetchall()]
-
-            # 매체구분 목록
-            cur.execute("SELECT DISTINCT 매체구분 FROM ad_execution WHERE 매체구분 IS NOT NULL AND 매체구분 != '' ORDER BY 매체구분")
-            media_types = [row['매체구분'] for row in cur.fetchall()]
-
-            # 연도 목록
-            cur.execute("SELECT DISTINCT 집행연도 AS yr FROM ad_execution WHERE 집행연도 IS NOT NULL AND 집행연도 != '' ORDER BY yr DESC")
-            years = [row['yr'] for row in cur.fetchall()]
+            # 요약만 필요한 첫 요청은 선택 목록 3개 조회를 기다리지 않는다.
+            options = read_filter_options(cur) if include_filters else {
+                "org_types": [], "media_types": [], "years": []
+            }
 
             # 같은 전체 자료를 다시 COUNT/SUM하지 않고 매체별 집계에서 합산한다.
             total_count = sum(row['ad_count'] for row in summary_rows)
@@ -44,12 +52,24 @@ def init_data():
             "total_count": total_count,
             "total_sum": total_sum,
             "summary": summary_rows,
-            "org_types": org_types,
-            "media_types": media_types,
-            "years": years
+            **options
         }
     except Exception as exc:
         print(f"❌ /api/init-data 에러: {exc}")
+        raise HTTPException(500, detail=str(exc))
+    finally:
+        conn.close()
+
+@router.get("/filter-options")
+def filter_options():
+    """선택 목록은 요약과 별도로 조회한다. 기존 정렬·항목을 유지한다."""
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            options = read_filter_options(cur)
+        return {"success": True, **options}
+    except Exception as exc:
+        print(f"❌ /api/filter-options 에러: {exc}")
         raise HTTPException(500, detail=str(exc))
     finally:
         conn.close()

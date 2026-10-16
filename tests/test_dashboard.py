@@ -109,6 +109,41 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.cur.execute.call_count, 4)
         self.cur.fetchone.assert_not_called()
 
+    def test_summary_only_init_runs_one_query(self):
+        groups = [
+            {"매체구분": "인터넷", "ad_count": 3, "total_spend": Decimal("110.25")},
+            {"매체구분": None, "ad_count": 2, "total_spend": None},
+        ]
+        self.cur.fetchall.return_value = groups
+        result = self.client.get("/api/init-data", params={"include_filters": "false"}).json()
+        self.assertEqual(result["total_count"], 5)
+        self.assertEqual(result["total_sum"], 110.25)
+        self.assertEqual(len(result["summary"]), 2)
+        self.assertEqual(result["org_types"], [])
+        self.assertEqual(result["media_types"], [])
+        self.assertEqual(result["years"], [])
+        self.assertEqual(self.cur.execute.call_count, 1)
+        self.assertIn("GROUP BY 매체구분", self.cur.execute.call_args.args[0])
+        self.conn.close.assert_called_once()
+
+    def test_filter_options_keep_original_values_and_order(self):
+        self.cur.fetchall.side_effect = [
+            [{"기관분류": "공기업"}, {"기관분류": "지자체"}],
+            [{"매체구분": "방송"}, {"매체구분": "인터넷"}],
+            [{"yr": "2026"}, {"yr": "2025"}],
+        ]
+        result = self.client.get("/api/filter-options").json()
+        self.assertEqual(result, {
+            "success": True, "org_types": ["공기업", "지자체"],
+            "media_types": ["방송", "인터넷"], "years": ["2026", "2025"],
+        })
+        self.assertEqual(self.cur.execute.call_count, 3)
+        for call in self.cur.execute.call_args_list:
+            self.assertIn("SELECT DISTINCT", call.args[0])
+            self.assertIn("ORDER BY", call.args[0])
+            self.assertNotIn("SUM(", call.args[0])
+        self.conn.close.assert_called_once()
+
     def test_year_summary_counts_all_media_groups_once(self):
         self.cur.fetchall.return_value = [
             {"매체구분": "인터넷", "ad_count": 3, "total_spend": Decimal("110")},

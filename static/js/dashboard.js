@@ -62,13 +62,12 @@ function sortTable(colName) {
     fetchData(true);
 }
 
-async function loadInitialData() {
+async function loadFilterOptions() {
     try {
-        const res = await fetch('/api/init-data');
+        const res = await fetch('/api/filter-options');
+        if (!res.ok) throw new Error(`선택 목록 요청 실패 (${res.status})`);
         const result = await res.json();
         if (result.success) {
-            document.getElementById('dbTotalBadge').innerText = `DB 전체 연동 건수: ${result.total_count.toLocaleString()}건`;
-
             const yearSelect = document.getElementById('yearFilter');
             result.years.forEach(y => {
                 const opt = document.createElement('option');
@@ -95,6 +94,23 @@ async function loadInitialData() {
                 });
             }
 
+        }
+    } catch (e) {
+        console.error("선택 목록 로드 실패:", e);
+    }
+}
+
+async function loadInitialData() {
+    try {
+        const summaryRequest = fetch('/api/init-data?include_filters=false');
+        // 선택 목록은 병렬로 채우되 상단 요약의 표시를 막지 않는다.
+        loadFilterOptions();
+        const res = await summaryRequest;
+        if (!res.ok) throw new Error(`초기 요약 요청 실패 (${res.status})`);
+        const result = await res.json();
+        if (result.success) {
+            document.getElementById('dbTotalBadge').innerText = `DB 전체 연동 건수: ${result.total_count.toLocaleString()}건`;
+
             if (!document.getElementById('yearFilter').value) {
                 updateTopVisuals(result.summary, result.total_count, '전체 기간(2022~2026.09.30)');
             }
@@ -109,7 +125,7 @@ async function loadInitialData() {
 
 
 async function initDashboard() {
-    // 요약·선택 목록과 첫 상세 페이지를 동시에 요청한다.
+    // 요약, 선택 목록, 첫 상세 페이지를 각각 요청한다.
     // 상세 행은 요약을 기다리지 않고 표시하고, 총액·건수만 같은 초기 집계에서 받는다.
     const totalsPromise = loadInitialData();
     await fetchData(true, totalsPromise);
