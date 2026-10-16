@@ -4,6 +4,10 @@ let currentOffset = 0;
 const batchSize = 2500;
 let isLoading = false;
 let hasMore = true;
+let activeRequestId = 0;
+let activeController = null;
+let currentTotals = null;
+let pendingChartSummary = null;
 
 let currentSortCol = '';
 let currentSortDir = 'ASC';
@@ -58,7 +62,7 @@ function sortTable(colName) {
     fetchData(true);
 }
 
-async function initDashboard() {
+async function loadInitialData() {
     try {
         const res = await fetch('/api/init-data');
         const result = await res.json();
@@ -91,31 +95,40 @@ async function initDashboard() {
                 });
             }
 
-            updateTopVisuals(result.summary, result.total_count, '전체 기간(2022~2026.09.30)');
+            if (!document.getElementById('yearFilter').value) {
+                updateTopVisuals(result.summary, result.total_count, '전체 기간(2022~2026.09.30)');
+            }
+            return {total_filtered: result.total_count, total_sum: result.total_sum};
         }
     } catch (e) {
         console.error("초기화 실패:", e);
     }
 
-    // 💡 초기화 완료 후 명확하게 상세 데이터 호출
-    await fetchData(true);
+    return null;
+}
+
+
+async function initDashboard() {
+    // 요약·선택 목록과 첫 상세 페이지를 동시에 요청한다.
+    // 상세 행은 요약을 기다리지 않고 표시하고, 총액·건수만 같은 초기 집계에서 받는다.
+    const totalsPromise = loadInitialData();
+    await fetchData(true, totalsPromise);
 }
 
 async function onYearFilterChange() {
     const selectedYear = document.getElementById('yearFilter').value;
     const yearLabel = selectedYear ? `${selectedYear}년도` : '전체 기간(2022~2026.09.30)';
-
+    const detailRequest = fetchData(true);
     try {
-        const res = await fetch(`/api/summary?year=${selectedYear}`);
+        const res = await fetch(`/api/summary?year=${encodeURIComponent(selectedYear)}`);
         const result = await res.json();
-        if (result.success) {
+        if (result.success && document.getElementById('yearFilter').value === selectedYear) {
             updateTopVisuals(result.summary, result.filtered_count, yearLabel);
         }
     } catch (e) {
         console.error("요약 데이터 갱신 오류:", e);
     }
-
-    fetchData(true);
+    await detailRequest;
 }
 
 function updateTopVisuals(summary, totalCount, periodLabel) {
@@ -139,6 +152,14 @@ function updateTopVisuals(summary, totalCount, periodLabel) {
             summaryBody.appendChild(tr);
         });
     }
+
+    drawChart(summary);
+}
+
+function drawChart(summary) {
+    pendingChartSummary = summary;
+    // 외부 차트 파일이 늦어도 검색·표 표시를 막지 않는다.
+    if (typeof Chart === 'undefined') return;
 
     const labels = summary.map(i => i.매체구분);
     const dataVals = summary.map(i => i.total_spend);
@@ -182,13 +203,18 @@ function updateTopVisuals(summary, totalCount, periodLabel) {
     }
 }
 
-async function fetchData(isReset = false) {
-    if (isLoading) return;
+async function fetchData(isReset = false, bootstrapTotalsPromise = null) {
+    if (isLoading && !isReset) return;
+    if (isReset && activeController) activeController.abort();
+    const requestId = ++activeRequestId;
+    const controller = new AbortController();
+    activeController = controller;
     isLoading = true;
 
     const tbody = document.getElementById('dataTableBody');
     if (isReset) {
         currentOffset = 0;
+        currentTotals = null;
         hasMore = true;
         tbody.innerHTML = '<tr><td colspan="11" class="text-center text-info">데이터를 불러오는 중입니다...</td></tr>';
     }
@@ -197,44 +223,32 @@ async function fetchData(isReset = false) {
     const orgType = document.getElementById('orgTypeFilter').value;
     const mediaType = document.getElementById('mediaTypeFilter').value;
     const keyword = document.getElementById('keywordInput').value;
-
-    const url = `/api/search-ads?year=${encodeURIComponent(year)}&org_type=${encodeURIComponent(orgType)}&media_type=${encodeURIComponent(mediaType)}&keyword=${encodeURIComponent(keyword)}&sort_col=${encodeURIComponent(currentSortCol)}&sort_dir=${encodeURIComponent(currentSortDir)}&limit=${batchSize}&offset=${currentOffset}`;
+    // 최초 전체 조회만 초기 집계를 공유한다. 필터 검색은 매번 새로 집계한다.
+    const initialTotals = !year && !orgType && !mediaType && !keyword
+        ? bootstrapTotalsPromise : null;
+    const includeTotals = !initialTotals && (isReset || !currentTotals);
+    const params = new URLSearchParams({
+        year, org_type: orgType, media_type: mediaType, keyword,
+        sort_col: currentSortCol, sort_dir: currentSortDir,
+        limit: String(batchSize), offset: String(currentOffset),
+        include_totals: String(includeTotals),
+    });
 
     try {
-        const res = await fetch(url);
+        const res = await fetch(`/api/search-ads?${params}`, {signal: controller.signal});
+        if (!res.ok) throw new Error(`조회 요청 실패 (${res.status})`);
         const result = await res.json();
+        if (requestId !== activeRequestId || !result.success) return;
 
-        if (result.success) {
-            const summaryCard = document.getElementById('searchSummaryCard');
-            if (keyword || year || orgType || mediaType) {
-                summaryCard.style.display = 'block';
-                let condText = [];
-                if (keyword) condText.push(`키워드: "${keyword}"`);
-                if (year) condText.push(`연도: ${year}년`);
-                if (orgType) condText.push(`기관분류: ${orgType}`);
-                if (mediaType) condText.push(`매체구분: ${mediaType}`);
-
-                document.getElementById('searchSummaryText').innerText = `${condText.join(' | ')} 조건 일치`;
-                document.getElementById('searchSummarySum').innerText = `총 집행액: ${Number(result.total_sum).toLocaleString()} 원 (${formatKoreanCurrency(result.total_sum)})`;
-            } else {
-                summaryCard.style.display = 'none';
-            }
-
-            if (isReset) tbody.innerHTML = '';
-
-            const rows = result.data;
-            document.getElementById('loadedCountBadge').innerText = `현재 로드된 결과: ${currentOffset + rows.length}건 (총 필터: ${result.total_filtered.toLocaleString()}건)`;
-
-            if (rows.length === 0 && isReset) {
-                tbody.innerHTML = '<tr><td colspan="11" class="text-center text-warning">검색 결과가 없습니다.</td></tr>';
-                hasMore = false;
-                isLoading = false;
-                return;
-            }
-
-            rows.forEach(r => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
+        if (isReset) tbody.innerHTML = '';
+        const rows = result.data;
+        if (rows.length === 0 && isReset) {
+            tbody.innerHTML = '<tr><td colspan="11" class="text-center text-warning">검색 결과가 없습니다.</td></tr>';
+            hasMore = false;
+        } else {
+            // 같은 2,500개 행을 한 번에 파싱·삽입해 반복 DOM 변경을 줄인다.
+            tbody.insertAdjacentHTML('beforeend', rows.map(r => `
+                <tr>
                     <td>${r.집행연도 || ''}</td>
                     <td>${r.기관분류 || ''}</td>
                     <td>${r.기관명 || ''}</td>
@@ -246,20 +260,56 @@ async function fetchData(isReset = false) {
                     <td class="text-end">${Number(r.광고료 || 0).toLocaleString()}</td>
                     <td class="text-end">${Number(r.수수료 || 0).toLocaleString()}</td>
                     <td class="text-end">${Number(r.총계 || r['총계(VAT포함)'] || 0).toLocaleString()}</td>
-                `;
-                tbody.appendChild(tr);
-            });
+                </tr>
+            `).join(''));
+        }
+        currentOffset += rows.length;
+        document.getElementById('loadedCountBadge').innerText =
+            `현재 로드된 결과: ${currentOffset}건 (전체 건수 집계 중...)`;
 
-            currentOffset += rows.length;
-            if (currentOffset >= result.total_filtered) {
-                hasMore = false;
+        if (includeTotals) {
+            currentTotals = result;
+        } else if (initialTotals) {
+            let totals = await initialTotals;
+            if (requestId !== activeRequestId) return;
+            if (!totals) {
+                // 초기 정보 요청 실패 시 기존 검색 API에서 합계만 다시 받는다.
+                const totalsParams = new URLSearchParams(params);
+                totalsParams.set('include_totals', 'true');
+                totalsParams.set('limit', '0');
+                totalsParams.set('offset', '0');
+                const totalsResponse = await fetch(`/api/search-ads?${totalsParams}`, {signal: controller.signal});
+                if (!totalsResponse.ok) throw new Error('전체 건수 집계에 실패했습니다.');
+                totals = await totalsResponse.json();
+                if (!totals.success) throw new Error('전체 건수 집계에 실패했습니다.');
             }
+            if (requestId !== activeRequestId) return;
+            currentTotals = totals;
+        }
+
+        if (currentTotals) {
+            const summaryCard = document.getElementById('searchSummaryCard');
+            if (keyword || year || orgType || mediaType) {
+                summaryCard.style.display = 'block';
+                const condText = [];
+                if (keyword) condText.push(`키워드: "${keyword}"`);
+                if (year) condText.push(`연도: ${year}년`);
+                if (orgType) condText.push(`기관분류: ${orgType}`);
+                if (mediaType) condText.push(`매체구분: ${mediaType}`);
+                document.getElementById('searchSummaryText').innerText = `${condText.join(' | ')} 조건 일치`;
+                document.getElementById('searchSummarySum').innerText = `총 집행액: ${Number(currentTotals.total_sum).toLocaleString()} 원 (${formatKoreanCurrency(currentTotals.total_sum)})`;
+            } else {
+                summaryCard.style.display = 'none';
+            }
+            document.getElementById('loadedCountBadge').innerText = `현재 로드된 결과: ${currentOffset}건 (총 필터: ${currentTotals.total_filtered.toLocaleString()}건)`;
+            hasMore = currentOffset < currentTotals.total_filtered;
         }
     } catch (e) {
+        if (e.name === 'AbortError' || requestId !== activeRequestId) return;
         console.error("데이터 로드 오류:", e);
         tbody.innerHTML = `<tr><td colspan="11" class="text-center text-danger">데이터 로드 중 에러 발생: ${e.message}</td></tr>`;
     } finally {
-        isLoading = false;
+        if (requestId === activeRequestId) isLoading = false;
     }
 }
 
@@ -272,4 +322,9 @@ document.getElementById('tableContainer').addEventListener('scroll', function() 
     }
 });
 
-window.onload = initDashboard;
+document.getElementById('chartLibrary').addEventListener('load', () => {
+    if (pendingChartSummary !== null) drawChart(pendingChartSummary);
+});
+
+// 스크립트는 body 끝에 있으므로 이미지·차트 파일의 load 이벤트를 기다릴 필요가 없다.
+initDashboard();

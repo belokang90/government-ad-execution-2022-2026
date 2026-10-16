@@ -51,7 +51,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(result["summary"][0]["total_spend"], 110.5)
         self.conn.close.assert_called_once()
 
-    def test_summary_uses_year_for_both_queries(self):
+    def test_summary_uses_year_for_aggregate(self):
         self.cur.fetchall.return_value = []
         self.cur.fetchone.return_value = {"cnt": 0}
         response = self.client.get("/api/summary", params={"year": "2025"})
@@ -93,6 +93,54 @@ class DashboardTests(unittest.TestCase):
         query = self.cur.execute.call_args_list[0].args[0]
         self.assertNotIn(dangerous, query)
         self.assertNotIn("ORDER BY", query)
+
+    def test_init_reuses_grouped_count_and_sum(self):
+        self.cur.fetchall.side_effect = [
+            [
+                {"매체구분": "인터넷", "ad_count": 2500, "total_spend": Decimal("900.25")},
+                {"매체구분": None, "ad_count": 2, "total_spend": None},
+                {"매체구분": "인쇄", "ad_count": 500, "total_spend": Decimal("110.75")},
+            ],
+            [{"기관분류": "지자체"}], [{"매체구분": "인터넷"}], [{"yr": "2026"}],
+        ]
+        result = self.client.get("/api/init-data").json()
+        self.assertEqual(result["total_count"], 3002)
+        self.assertEqual(result["total_sum"], 1011)
+        self.assertEqual(self.cur.execute.call_count, 4)
+        self.cur.fetchone.assert_not_called()
+
+    def test_year_summary_counts_all_media_groups_once(self):
+        self.cur.fetchall.return_value = [
+            {"매체구분": "인터넷", "ad_count": 3, "total_spend": Decimal("110")},
+            {"매체구분": None, "ad_count": 2, "total_spend": None},
+        ]
+        result = self.client.get("/api/summary", params={"year": "2026"}).json()
+        self.assertEqual(result["filtered_count"], 5)
+        self.assertEqual(self.cur.execute.call_count, 1)
+        self.cur.fetchone.assert_not_called()
+
+    def test_page_only_skips_full_count_and_sum(self):
+        self.cur.fetchall.return_value = [{"기관명": "시험기관"}]
+        result = self.client.get("/api/search-ads", params={
+            "keyword": "테스트", "include_totals": "false", "offset": 2500,
+        }).json()
+        self.assertEqual(result["data"], [{"기관명": "시험기관"}])
+        self.assertIsNone(result["total_filtered"])
+        self.assertIsNone(result["total_sum"])
+        self.assertEqual(self.cur.execute.call_count, 1)
+        self.cur.fetchone.assert_not_called()
+        self.assertEqual(self.cur.execute.call_args.args[1], ["%테스트%"] * 3 + [2500, 2500])
+
+    def test_gzip_preserves_large_response(self):
+        self.cur.fetchall.return_value = [
+            {"기관명": "테스트기관", "광고명": "정부광고 집행내역", "광고료": 110} for _ in range(2500)
+        ]
+        self.cur.fetchone.return_value = {"cnt": 2500, "total_sum": Decimal("275000")}
+        plain = self.client.get("/api/search-ads", headers={"Accept-Encoding": "identity"})
+        compressed = self.client.get("/api/search-ads", headers={"Accept-Encoding": "gzip"})
+        self.assertEqual(compressed.headers["content-encoding"], "gzip")
+        self.assertEqual(plain.json(), compressed.json())
+        self.assertLess(int(compressed.headers["content-length"]), int(plain.headers["content-length"]))
 
     def test_query_failure_closes_connection(self):
         self.cur.execute.side_effect = RuntimeError("test query error")

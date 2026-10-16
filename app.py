@@ -3,11 +3,14 @@
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from config import BASE_DIR
 from routers.ads import router as ads_router
 
 app = FastAPI(title="정부광고 집행내역 대시보드")
+# 2,500건 JSON을 압축해 전송량을 줄인다. 데이터와 응답 구조는 유지한다.
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=5)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 app.include_router(ads_router)
 
