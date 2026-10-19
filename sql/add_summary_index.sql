@@ -2,7 +2,7 @@
 -- Workbench에서 이 파일 자체를 새 탭으로 열어 전체 실행한다.
 -- 같은 이름의 인덱스가 이미 있으면 추가 작업을 생략한다.
 -- 전제: 매체구분은 VARCHAR(50), 총계(VAT포함)는 DECIMAL인 기존 운영 DB.
--- docs/installation.md 11-2번의 자료형 확인 절차를 먼저 따른다. TEXT 열을 임의로 변경하지 않는다.
+-- 설치방법.md 11-2번의 자료형 확인 절차를 먼저 따른다. TEXT 열을 임의로 변경하지 않는다.
 
 SET @summary_index_exists = (
     SELECT COUNT(*)
