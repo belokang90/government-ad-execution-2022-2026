@@ -1,0 +1,11 @@
+{
+  "source": "csv",
+  "year": "2024",
+  "compare_year": "2026",
+  "start_on_or_before": "2024-09-30",
+  "start_on_or_after": null,
+  "org_types": ["국가행정기관", "공공기관"],
+  "media_types": ["인쇄", "인터넷", "방송"],
+  "output_folder": "comparison_output",
+  "openai_model": "gpt-4.1-mini"
+}
