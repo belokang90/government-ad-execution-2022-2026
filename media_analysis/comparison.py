@@ -14,7 +14,12 @@ else:
 
 def period_settings(settings, year):
     result = dict(settings, year=str(year))
-    result["start_on_or_before"] = date.fromisoformat(settings["start_on_or_before"]).replace(year=int(year)).isoformat()
+    if settings.get("period_policy") == "year_pair":
+        partial = "2026" in (str(settings["year"]), str(settings["compare_year"]))
+        result["start_on_or_before"] = f"{year}-09-30" if partial else None
+        result["start_on_or_after"] = None
+        return result
+    result["start_on_or_before"] = date.fromisoformat(settings["start_on_or_before"]).replace(year=int(year)).isoformat() if settings.get("start_on_or_before") else None
     if settings.get("start_on_or_after"):
         result["start_on_or_after"] = date.fromisoformat(settings["start_on_or_after"]).replace(year=int(year)).isoformat()
     return result
@@ -105,14 +110,14 @@ def write_outputs(folder, fact, details, invalid_dates):
     (folder/"report.html").write_text(template.replace("__REPORT_DATA__", content).replace("__REPORT_TITLE__", html.escape(fact["topic"])), encoding="utf-8")
 
 
-def execute(settings, args, groups, lookup, source_type):
+def collect(settings, groups, lookup, source_type, base_csv=None, current_csv=None):
     if source_type not in ("csv", "mysql"):
         raise ValueError("자료 종류는 csv 또는 mysql이어야 합니다.")
     periods, details, invalid_dates = {}, [], []
     for index, year in enumerate((str(settings["year"]), str(settings["compare_year"]))):
         period = period_settings(settings, year)
         if source_type == "csv":
-            custom = args.csv if index==0 else args.compare_csv
+            custom = base_csv if index==0 else current_csv
             path = custom or core.PROJECT_DIR/"data"/f"{year}년도_정부광고집행내역_260930 기준.csv"
             if not path.is_file():
                 raise ValueError(f"{year}년 원자료가 없습니다: {path.name}")
@@ -133,6 +138,13 @@ def execute(settings, args, groups, lookup, source_type):
         invalid_dates.extend({"자료연도": year, **row} for row in invalid)
     base_year, current_year = str(settings["year"]), str(settings["compare_year"])
     fact = build_comparison(periods[base_year], periods[current_year], settings)
+    fact["scope"]["period_label"] = "양쪽 광고시작일 각각 9월 30일 이하" if fact["scope"]["base_cutoff"] else "각 연도 원자료 전체 · 연간 비교"
+    return fact, details, invalid_dates
+
+
+def execute(settings, args, groups, lookup, source_type):
+    fact, details, invalid_dates = collect(settings, groups, lookup, source_type, args.csv, args.compare_csv)
+    base_year, current_year = str(settings["year"]), str(settings["compare_year"])
     folder = args.output or core.BASE_DIR/settings.get("output_folder", "comparison_output")
     write_outputs(folder, fact, details, invalid_dates)
     print(f"{base_year}년 대비 {current_year}년 비교 완료. 양쪽 광고 내역 전체 {len(details):,}행")

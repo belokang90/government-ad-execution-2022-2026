@@ -63,9 +63,9 @@ def parse_start(value):
 def load_settings(path=BASE_DIR / "settings.json"):
     settings = json.loads(Path(path).read_text(encoding="utf-8-sig"))
     year = int(settings["year"])
-    cutoff = date.fromisoformat(settings["start_on_or_before"])
+    cutoff = date.fromisoformat(settings["start_on_or_before"]) if settings.get("start_on_or_before") else None
     lower = settings.get("start_on_or_after")
-    if cutoff.year != year or (lower and date.fromisoformat(lower) > cutoff):
+    if settings.get("period_policy") != "year_pair" and ((cutoff and cutoff.year != year) or (lower and cutoff and date.fromisoformat(lower) > cutoff)):
         raise ValueError("연도와 광고시작일 범위를 확인하세요.")
     if not settings.get("org_types") or not settings.get("media_types"):
         raise ValueError("기관분류와 매체구분은 하나 이상 지정해야 합니다.")
@@ -73,7 +73,8 @@ def load_settings(path=BASE_DIR / "settings.json"):
         compare_year = int(settings["compare_year"])
         if compare_year == year:
             raise ValueError("비교연도는 기준연도와 달라야 합니다.")
-        cutoff.replace(year=compare_year)
+        if cutoff:
+            cutoff.replace(year=compare_year)
     return settings
 
 
@@ -126,7 +127,7 @@ def mysql_rows(settings):
 
 
 def aggregate(rows, settings, groups, lookup, source):
-    cutoff = date.fromisoformat(settings["start_on_or_before"])
+    cutoff = date.fromisoformat(settings["start_on_or_before"]) if settings.get("start_on_or_before") else None
     lower = date.fromisoformat(settings["start_on_or_after"]) if settings.get("start_on_or_after") else None
     year = int(settings["year"])
     audit = Counter()
@@ -151,8 +152,9 @@ def aggregate(rows, settings, groups, lookup, source):
         if start is None:
             audit["invalid_start_date_rows"] += 1
             invalid_dates.append({"원자료참조": reference, **row})
-            continue
-        if start > cutoff or (lower and start < lower):
+            if cutoff or lower:
+                continue
+        if start and ((cutoff and start > cutoff) or (lower and start < lower)):
             audit["excluded_date_rows"] += 1
             continue
         amount = money(row["총계(VAT포함)"])
@@ -163,7 +165,7 @@ def aggregate(rows, settings, groups, lookup, source):
         brand = lookup.get(normalize_name(row["매체명"]))
         if brand and row["매체구분"] in settings["media_types"]:
             audit["selected_rows"] += 1
-            previous_year = start.year < year
+            previous_year = bool(start and start.year < year)
             audit["selected_previous_year_start_rows"] += int(previous_year)
             selected_amount += amount
             item = brand_totals[brand["brand"]]
@@ -176,7 +178,7 @@ def aggregate(rows, settings, groups, lookup, source):
             breakdown[key][1] += amount
             aliases[(brand["group"], brand["brand"], row["매체명"], row["매체구분"])][0] += 1
             aliases[(brand["group"], brand["brand"], row["매체명"], row["매체구분"])][1] += amount
-            details.append({"분석매체군": brand["group"], "통합매체명": brand["brand"], "원자료참조": reference, "이전연도시작": "예" if previous_year else "아니오", "분석시작일": start.isoformat(), **row})
+            details.append({"분석매체군": brand["group"], "통합매체명": brand["brand"], "원자료참조": reference, "이전연도시작": "확인 불가" if start is None else "예" if previous_year else "아니오", "분석시작일": start.isoformat() if start else "", **row})
             duplicate_keys[tuple(row[field] for field in RAW_FIELDS)] += 1
         else:
             audit["unclassified_rows"] += 1
@@ -203,14 +205,14 @@ def aggregate(rows, settings, groups, lookup, source):
     details.sort(key=lambda item: (item["분석매체군"], item["통합매체명"], item["분석시작일"], item["기관명"], item["광고명"], item["원자료참조"]))
 
     fact_sheet = {
-        "topic": f"{year}년 자료의 광고시작일 {cutoff.isoformat()} 이하 대표 매체군 정부광고",
+        "topic": f"{year}년 자료의 광고시작일 {cutoff.isoformat()} 이하 대표 매체군 정부광고" if cutoff else f"{year}년 연간 원자료 전체의 대표 매체군 정부광고",
         "source": source,
         "generated_at": datetime.now(timezone(timedelta(hours=9))).isoformat(timespec="seconds"),
         "scope": {**settings, "date_field": "광고시작일", "previous_year_starts_included": lower is None, "denominator": "같은 기관·시작일 조건을 충족한 모든 매체구분의 광고금액", "amount_unit": "원(VAT 포함)", "amount_field": "총계(VAT포함)", "count_unit": "원자료 행 수"},
         "classification_note": groups["classification_note"],
         "classification_sources": groups["sources"],
         "brand_definitions": groups["brands"],
-        "limitations": [LIMITATION, "예산·매체선정 사유나 특혜·차별의 원인을 이 집계만으로 판단하지 않는다.", "등록명 목록에 없는 다른 언론·계열사·대행 표기는 두 매체군에 포함하지 않았다.", "정확히 같은 행이 있어도 실제 중복 여부를 확정할 수 없어 삭제하지 않았다."],
+        "limitations": [LIMITATION if cutoff or lower else "각 연도 원자료 파일 전체에 기관·매체 조건을 적용한 연간 비교다. 광고시작일로 추가 제외하지 않으며 날짜 미확인 행도 포함한다. 지급일 기준 지출이나 예산총액이 아니고, 금액은 기간별로 나누지 않았다. 건수는 원자료 행 수다.", "예산·매체선정 사유나 특혜·차별의 원인을 이 집계만으로 판단하지 않는다.", "등록명 목록에 없는 다른 언론·계열사·대행 표기는 두 매체군에 포함하지 않았다.", "정확히 같은 행이 있어도 실제 중복 여부를 확정할 수 없어 삭제하지 않았다."],
         "eligible_total": {"ad_count": audit["eligible_rows"], "total_amount": amount_text(eligible_amount)},
         "selected_total": {"ad_count": len(details), "total_amount": amount_text(selected_amount)},
         "unclassified_total": {"ad_count": audit["unclassified_rows"], "total_amount": amount_text(eligible_amount - selected_amount)},
@@ -261,8 +263,18 @@ def main(argv=None):
     parser.add_argument("--output", type=Path)
     parser.add_argument("--settings", type=Path, default=BASE_DIR / "settings.json")
     parser.add_argument("--open-report", action="store_true")
+    parser.add_argument("--base-year", type=int, choices=range(2022, 2027))
+    parser.add_argument("--compare-year", type=int, choices=range(2022, 2027))
     args = parser.parse_args(argv)
     settings = load_settings(args.settings)
+    if args.base_year is not None:
+        settings["year"] = str(args.base_year)
+    if args.compare_year is not None:
+        settings["compare_year"] = str(args.compare_year)
+    if args.base_year is not None or args.compare_year is not None:
+        if settings["year"] == settings.get("compare_year"):
+            raise ValueError("기준연도와 비교연도는 달라야 합니다.")
+        settings["period_policy"] = "year_pair"
     source_type = args.source or settings.get("source", "csv")
     groups, lookup = load_groups()
     if settings.get("compare_year"):

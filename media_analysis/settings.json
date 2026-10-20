@@ -2,6 +2,7 @@
   "source": "csv",
   "year": "2024",
   "compare_year": "2026",
+  "period_policy": "year_pair",
   "start_on_or_before": "2024-09-30",
   "start_on_or_after": null,
   "org_types": ["국가행정기관", "공공기관"],

@@ -211,6 +211,7 @@ class MediaAnalysisTests(unittest.TestCase):
             self.assertEqual(len(list(analysis.csv_rows(args.output / "all_ads_2026.csv"))), 2)
 
     def test_comparison_moves_lower_bound_to_each_year(self):
+        self.settings["period_policy"] = "custom"
         self.settings["start_on_or_after"] = "2024-01-01"
         period = comparison.period_settings(self.settings, "2026")
         self.assertEqual(period["start_on_or_after"], "2026-01-01")
