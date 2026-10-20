@@ -1,4 +1,4 @@
-/* 정부광고 대시보드: 화면 색상·배치 */
+/* 정부광고 조회 화면: 화면 색상·배치 */
 body { background-color: #121212; color: #e0e0e0; font-family: 'Malgun Gothic', sans-serif; }
 .card { background-color: #1e1e1e; border: 1px solid #333; color: #fff; }
 .table { color: #e0e0e0; font-size: 13px; }

@@ -1,4 +1,4 @@
-// 정부광고 대시보드: 검색·정렬·차트·추가 로딩
+// 정부광고 조회 화면: 검색·정렬·차트·추가 로딩
 let myChart = null;
 let currentOffset = 0;
 const batchSize = 2500;

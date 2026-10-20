@@ -1,8 +1,8 @@
 # 설치·실행 안내 — Windows
 
-프로젝트 소개와 기능 설명은 [README](README.md)에 있습니다.
+**정부광고 집행내역 (2022~2026.09.30 기준)**의 설치 안내입니다. 프로젝트 소개와 기능 설명은 [README](README.md)에 있습니다.
 
-이 문서는 **Windows 10·11, 일반적인 64비트 PC, Python과 DB를 같은 PC에서 실행하는 경우**를 기준으로 작성했습니다. 처음 설치하는 사람은 1번부터 순서대로 따라 하세요. 대시보드 조회에는 유료 API 키가 필요하지 않습니다. 새 기사 생성·검수 기능을 쓰려면 [ARTICLE_WORKFLOW.md](ARTICLE_WORKFLOW.md)를 함께 따르세요.
+이 문서는 **Windows 10·11, 일반적인 64비트 PC, Python과 DB를 같은 PC에서 실행하는 경우**를 기준으로 작성했습니다. 처음 설치하는 사람은 1번부터 순서대로 따라 하세요. 정부광고 자료 조회에는 유료 API 키가 필요하지 않습니다. 새 기사 생성·검수 기능을 쓰려면 [ARTICLE_WORKFLOW.md](ARTICLE_WORKFLOW.md)를 함께 따르세요.
 
 > **이미 데이터가 정상적으로 뜨는 PC라면:** [11. 기존 PC에서 수정본만 업데이트](#11-기존-pc에서-수정본만-업데이트)로 가세요. DB 생성과 CSV 적재를 처음부터 다시 하지 않습니다.
 >
@@ -33,7 +33,7 @@
 | MySQL Server | 광고 데이터를 실제로 저장하고 조회·집계 | **Community 8.0 계열**로 안내 |
 | MySQL Workbench | SQL 실행·DB 확인·백업을 화면으로 작업 | Server와 함께 설치 |
 | VS Code | 프로젝트 폴더·설정 파일·터미널 열기 | 설치 권장 |
-| 웹브라우저 | 완성된 대시보드 보기 | Chrome·Edge 등 |
+| 웹브라우저 | 완성된 조회 화면 보기 | Chrome·Edge 등 |
 
 VS Code와 Workbench는 편집·관리 도구입니다. 앱 실행 자체에는 Python과 MySQL Server가 필요합니다. 아래에서는 초보자가 화면을 보고 작업할 수 있도록 두 관리 도구도 사용합니다.
 
@@ -99,7 +99,7 @@ py -3.13 --version
 2. 왼쪽 위 브랜치 선택이 **`main`**인지 확인합니다.
 3. 초록색 코드 버튼을 눌러 **Download ZIP**을 선택합니다.
 4. 받은 ZIP을 우클릭해 **모두 압축 풀기**로 원하는 작업 폴더에 풉니다. ZIP 안에서 직접 실행하지 않습니다.
-5. 압축을 푼 뒤 `app.py`, `requirements.txt`, `schema.sql`, `data`가 함께 있는 폴더를 찾습니다. 기본 이름은 `government_ad_app-main`일 수 있습니다.
+5. 압축을 푼 뒤 `app.py`, `requirements.txt`, `schema.sql`, `data`가 함께 있는 폴더를 찾습니다. 폴더 이름은 다운로드한 저장소 이름과 브랜치에 따라 달라질 수 있습니다.
 
 ### 4-2. VS Code에서 폴더 열기
 
@@ -119,8 +119,8 @@ Get-ChildItem app.py, requirements.txt, schema.sql
 Git을 이미 사용하는 사람은 ZIP 대신 다음 명령으로 받을 수 있습니다. 그다음 만들어진 폴더를 VS Code로 열면 됩니다.
 
 ```powershell
-git clone --branch main https://github.com/belokang90/government_ad_app.git
-cd government_ad_app
+git clone --branch main https://github.com/belokang90/government_ad_app.git government-ad-execution-2022-2026
+cd government-ad-execution-2022-2026
 ```
 
 ## 5. 가상환경 만들기와 패키지 설치
@@ -326,7 +326,7 @@ Application startup complete.
 
 Chrome·Edge 등 브라우저 주소창에 다음 주소를 입력합니다.
 
-**대시보드:** <http://127.0.0.1:8000>
+**조회 화면:** <http://127.0.0.1:8000>
 
 서버 주소를 여는 것이므로 `app.py`나 HTML 파일을 더블클릭해서 열지 않습니다. `127.0.0.1`은 현재 PC 자신을 뜻합니다.
 
@@ -337,7 +337,7 @@ Chrome·Edge 등 브라우저 주소창에 다음 주소를 입력합니다.
 3. 연도 선택·기관명 검색을 해봅니다.
 4. 상세 목록 안에서 아래로 스크롤하면 추가 자료가 표시되는지 확인합니다. 처음 목록은 최대 2,500건이므로 전체 건수와 처음 표시한 행 수는 다를 수 있습니다.
 
-API 설명 화면은 <http://127.0.0.1:8000/docs>입니다. 일반 사용자는 대시보드 주소만 열면 됩니다.
+API 설명 화면은 <http://127.0.0.1:8000/docs>입니다. 일반 사용자는 조회 화면 주소만 열면 됩니다.
 
 차트와 화면 스타일 일부는 외부 CDN에서 가져오므로 인터넷 접속이 필요합니다.
 
